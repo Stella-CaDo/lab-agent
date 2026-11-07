@@ -48,3 +48,25 @@ a {
 img {
   max-width: 100%;
 }
+
+/* ===== 页面通用类：业务页面共用，不要在 scoped 里重复写 ===== */
+
+/* 分页器靠右 */
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* 表格里没有操作项时的占位 */
+.muted {
+  color: #c0c4cc;
+}
+
+/* 表单控件下方的灰色提示 */
+.hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #909399;
+}
