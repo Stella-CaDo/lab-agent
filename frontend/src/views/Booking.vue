@@ -24,8 +24,8 @@
         />
       </el-form-item>
       <el-form-item label="实验室">
-        <el-select v-model="store.query.labId" placeholder="全部" clearable style="width: 200px">
-          <el-option v-for="l in labs" :key="l.id" :label="l.name" :value="l.id" />
+        <el-select v-model="store.query.labName" placeholder="全部" clearable style="width: 200px">
+          <el-option v-for="l in labs" :key="l.labName" :label="l.labName" :value="l.labName" />
         </el-select>
       </el-form-item>
     </SearchBar>
@@ -92,16 +92,16 @@
       <el-form label-width="80px">
         <el-form-item label="实验室" required>
           <el-select
-            v-model="form.labId"
+            v-model="form.labName"
             placeholder="请选择"
             style="width: 100%"
             @change="onLabChange"
           >
             <el-option
               v-for="l in availableLabs"
-              :key="l.id"
-              :label="l.name + '（容量 ' + l.capacity + '）'"
-              :value="l.id"
+              :key="l.labName"
+              :label="l.labName + '（容量 ' + l.maxPeople + '）'"
+              :value="l.labName"
             />
           </el-select>
         </el-form-item>
@@ -143,10 +143,10 @@
           <el-input-number
             v-model="form.attendees"
             :min="1"
-            :max="currentLab ? currentLab.capacity : 200"
+            :max="currentLab ? currentLab.maxPeople : 200"
           />
           <span v-if="currentLab" class="hint" style="margin-left: 10px">
-            上限 {{ currentLab.capacity }} 人
+            上限 {{ currentLab.maxPeople }} 人
           </span>
         </el-form-item>
       </el-form>
@@ -178,7 +178,7 @@ const tab = ref('all')
 const dialogVisible = ref(false)
 const submitting = ref(false)
 const form = reactive({
-  labId: null,
+  labName: '',
   date: '',
   startTime: '',
   endTime: '',
@@ -186,31 +186,14 @@ const form = reactive({
   attendees: 1
 })
 
-const currentLab = computed(() => labs.value.find((l) => l.id === form.labId) || null)
-const availableLabs = computed(() => labs.value.filter((l) => l.status === 'available'))
+const currentLab = computed(() => labs.value.find((l) => l.labName === form.labName) || null)
+const availableLabs = computed(() => labs.value.filter((l) => l.status === '可用'))
 
-/* ---------- 时间刻度：跟着实验室的开放时间走 ---------- */
-const toMin = (t) => {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
-}
-const fmt = (m) =>
-  String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')
-
-const timePoints = computed(() => {
-  const lab = currentLab.value
-  if (!lab) return []
-  const open = toMin(lab.openTime)
-  const close = toMin(lab.closeTime)
-  const pts = []
-  for (let m = open; m <= close; m += 120) pts.push(fmt(m))
-  // 收尾点不是整点间隔时也要能选（比如 17:30 关门）
-  if (pts[pts.length - 1] !== lab.closeTime) pts.push(lab.closeTime)
-  return pts
-})
-const startOptions = computed(() => timePoints.value.slice(0, -1))
+/* ---------- 时间刻度：变体实验室没有开放时段字段，统一按 08:00-21:00 ---------- */
+const TIME_POINTS = ['08:00', '10:00', '13:00', '15:00', '17:00', '19:00', '21:00']
+const startOptions = computed(() => TIME_POINTS.slice(0, -1))
 const endOptions = computed(() => {
-  const rest = timePoints.value.slice(1)
+  const rest = TIME_POINTS.slice(1)
   return form.startTime ? rest.filter((t) => t > form.startTime) : rest
 })
 
@@ -239,14 +222,14 @@ function onSearch() {
 
 function onReset() {
   store.query.date = ''
-  store.query.labId = ''
+  store.query.labName = ''
   store.query.page = 1
   store.fetchList()
 }
 
 function openCreate() {
   Object.assign(form, {
-    labId: null,
+    labName: '',
     date: '',
     startTime: '',
     endTime: '',
@@ -265,17 +248,17 @@ function onLabChange() {
 /** 与 mock 的后端校验保持一致，逐条拦在前面 */
 function validate() {
   const lab = currentLab.value
-  if (!form.labId) return '请选择实验室'
+  if (!form.labName) return '请选择实验室'
   if (!lab) return '实验室不存在'
-  if (lab.status !== 'available') return '该实验室当前不可预约'
+  if (lab.status !== '可用') return '该实验室当前不可预约'
   if (!form.date) return '请选择预约日期'
   if (!form.startTime || !form.endTime) return '请选择预约时段'
   if (form.startTime >= form.endTime) return '结束时间必须晚于开始时间'
-  if (form.startTime < lab.openTime || form.endTime > lab.closeTime) {
-    return '预约时段需在开放时间 ' + lab.openTime + '-' + lab.closeTime + ' 内'
+  if (form.startTime < '08:00' || form.endTime > '21:00') {
+    return '预约时段需在 08:00-21:00 之间'
   }
   if (!form.attendees || form.attendees < 1) return '人数至少 1 人'
-  if (form.attendees > lab.capacity) return '人数不能超过容量 ' + lab.capacity
+  if (form.attendees > lab.maxPeople) return '人数不能超过容量 ' + lab.maxPeople
   return ''
 }
 

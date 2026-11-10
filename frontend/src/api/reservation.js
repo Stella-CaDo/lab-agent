@@ -1,6 +1,6 @@
 import request from './request'
 
-/** 分页查询：status / date / labId / page / size */
+/** 分页查询：status / date / labName / page / size */
 export const getReservationList = (params) => request.get('/reservations', { params })
 /** 提交预约 */
 export const createReservation = (data) => request.post('/reservations', data)

@@ -1,6 +1,6 @@
 import request from './request'
 
-/** 分页查询：keyword / building / status / page / size */
+/** 分页查询：keyword / location / status / page / size */
 export const getLabList = (params) => request.get('/labs', { params })
 /** 单个实验室 */
 export const getLabDetail = (id) => request.get('/labs/' + id)

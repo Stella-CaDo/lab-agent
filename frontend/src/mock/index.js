@@ -2,7 +2,7 @@
 // 用 axios 自定义 adapter 把 /api/* 的请求转到这里，不发真实网络请求
 // 数据读写在 localStorage（见 db.js）：刷新、重启、build 之后都还在
 // ============================================================
-import { db, saveDb, resetDb, nextId, offsetDate, TIME_SLOTS } from './db.js'
+import { db, saveDb, resetDb, syncLegacyIn, nextId, offsetDate, TIME_SLOTS } from './db.js'
 
 const isDev = Boolean(import.meta.env && import.meta.env.DEV)
 
@@ -28,25 +28,23 @@ function paginate(list, page = 1, size = 10) {
 /** 时段重叠判定：新开始 < 老结束 且 老开始 < 新结束 */
 const isOverlap = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd
 
-/** 给预约补上实验室名 / 用户名，表格直接展示 */
+/** 给预约补上用户名，表格直接展示；实验室名直接存的是 labName */
 function withNames(r) {
-  const lab = db.labs.find((l) => l.id === r.labId)
   const user = db.users.find((u) => u.id === r.userId)
+  const exists = db.labs.some((l) => l.labName === r.labName)
   return {
     ...r,
-    labName: lab ? lab.name : '已删除实验室',
+    labName: exists ? r.labName : '已删除实验室',
     userName: user ? user.name : '未知用户'
   }
 }
 
 /** 实验室字段校验：返回错误文案或 null */
 function validateLab(body) {
-  if (!body.name || !String(body.name).trim()) return '实验室名称不能为空'
-  const capacity = Number(body.capacity)
-  if (!capacity || capacity < 1 || capacity > 200) return '容量必须是 1 到 200 之间的数字'
-  if (!body.building) return '请选择所属楼栋'
-  if (body.openTime && body.closeTime && body.openTime >= body.closeTime)
-    return '开放时间：结束必须晚于开始'
+  if (!body.labName || !String(body.labName).trim()) return '实验室名称不能为空'
+  const maxPeople = Number(body.maxPeople)
+  if (!maxPeople || maxPeople < 1 || maxPeople > 200) return '容纳人数必须是 1 到 200 之间的数字'
+  if (!body.location || !String(body.location).trim()) return '所在位置不能为空'
   return null
 }
 
@@ -76,6 +74,8 @@ function parseBody(data) {
 /* ---------------- 所有 mock 路由 ---------------- */
 export async function handleMock({ method, path, query = {}, body = {} }) {
   if (isDev) console.info('[API]', method, path, { query, body })
+  // 变体页面（Lab.vue / Equ.vue）直接写 labList / deviceList，这里先对齐一次
+  syncLegacyIn()
   await sleep(80 + Math.floor(Math.random() * 120))
 
   /* ===== 登录（A1 调用） ===== */
@@ -90,15 +90,15 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
   /* ===== 实验室 CRUD（B1 调用） ===== */
   if (path === '/labs' && method === 'GET') {
     const keyword = (query.keyword || '').trim()
-    const building = query.building || ''
+    const location = query.location || ''
     const status = query.status || ''
     const filtered = db.labs.filter((l) => {
       const hit =
         !keyword ||
-        l.name.includes(keyword) ||
-        l.room.includes(keyword) ||
-        l.building.includes(keyword)
-      return hit && (!building || l.building === building) && (!status || l.status === status)
+        l.labName.includes(keyword) ||
+        l.location.includes(keyword) ||
+        String(l.id).includes(keyword)
+      return hit && (!location || l.location === location) && (!status || l.status === status)
     })
     return ok(paginate(filtered, query.page, query.size))
   }
@@ -108,8 +108,7 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
     if (error) return fail(error)
     // id 放最后：防止前端把表单里的 null 传进来
     const lab = {
-      status: 'available',
-      remark: '',
+      status: '可用',
       ...body,
       id: nextId(db.labs)
     }
@@ -132,7 +131,9 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
       return ok(db.labs[idx], '修改成功')
     }
     if (method === 'DELETE') {
-      const used = db.reservations.some((r) => r.labId === id && r.status === 'pending')
+      const used = db.reservations.some(
+        (r) => r.labName === db.labs[idx].labName && r.status === 'pending'
+      )
       if (used) return fail('该实验室还有待审核预约，不能删除')
       db.labs.splice(idx, 1)
       saveDb()
@@ -144,13 +145,13 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
   if (path === '/reservations' && method === 'GET') {
     const status = query.status || ''
     const date = query.date || ''
-    const labId = query.labId || ''
+    const labName = query.labName || ''
     const filtered = db.reservations
       .filter(
         (r) =>
           (!status || r.status === status) &&
           (!date || r.date === date) &&
-          (!labId || String(r.labId) === labId)
+          (!labName || r.labName === labName)
       )
       .slice()
       .sort((a, b) =>
@@ -161,21 +162,23 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
   }
 
   if (path === '/reservations' && method === 'POST') {
-    const lab = db.labs.find((l) => l.id === Number(body.labId))
+    // 实验室和预约用 labName 关联
+    const lab = db.labs.find((l) => l.labName === body.labName)
     if (!lab) return fail('实验室不存在')
-    if (lab.status !== 'available') return fail('该实验室当前不可预约')
+    if (lab.status !== '可用') return fail('该实验室当前不可预约')
     if (!body.date || !body.startTime || !body.endTime) return fail('请选择预约日期和时段')
     if (body.date < offsetDate(0)) return fail('不能预约过去的日期')
     if (body.startTime >= body.endTime) return fail('结束时间必须晚于开始时间')
-    if (body.startTime < lab.openTime || body.endTime > lab.closeTime) {
-      return fail('预约时段超出实验室开放时间 ' + lab.openTime + '-' + lab.closeTime)
+    // 变体的实验室没有开放时段字段，统一按 08:00-21:00 校验
+    if (body.startTime < TIME_SLOTS[0] || body.endTime > '21:00') {
+      return fail('预约时段需在 08:00-21:00 之间')
     }
-    if (Number(body.attendees) > lab.capacity)
-      return fail('预约人数不能超过实验室容量 ' + lab.capacity)
+    if (Number(body.attendees) > lab.maxPeople)
+      return fail('预约人数不能超过实验室容量 ' + lab.maxPeople)
     // 冲突校验：同实验室 + 同日期 + 时段重叠 + 状态有效
     const conflict = db.reservations.find(
       (r) =>
-        r.labId === lab.id &&
+        r.labName === lab.labName &&
         r.date === body.date &&
         (r.status === 'pending' || r.status === 'approved') &&
         isOverlap(body.startTime, body.endTime, r.startTime, r.endTime)
@@ -184,7 +187,7 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
       return fail('时段冲突：' + conflict.startTime + '-' + conflict.endTime + ' 已被占用')
     const record = {
       id: nextId(db.reservations),
-      labId: lab.id,
+      labName: lab.labName,
       userId: Number(body.userId) || 1,
       date: body.date,
       startTime: body.startTime,
@@ -227,17 +230,16 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
   /* ===== 设备（B2 调用） ===== */
   if (path === '/devices' && method === 'GET') {
     const keyword = (query.keyword || '').trim()
-    const labId = query.labId || ''
-    const filtered = db.devices
-      .filter(
-        (d) =>
-          (!labId || String(d.labId) === labId) &&
-          (!keyword || d.name.includes(keyword) || d.model.includes(keyword))
-      )
-      .map((d) => ({
-        ...d,
-        labName: (db.labs.find((l) => l.id === d.labId) || {}).name || '-'
-      }))
+    const labName = query.labName || ''
+    const filtered = db.devices.filter(
+      (d) =>
+        (!labName || d.labName === labName) &&
+        (!keyword ||
+          d.name.includes(keyword) ||
+          d.type.includes(keyword) ||
+          d.labName.includes(keyword) ||
+          String(d.id).toLowerCase().includes(keyword.toLowerCase()))
+    )
     return ok(paginate(filtered, query.page, query.size))
   }
 
@@ -257,11 +259,11 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
     const usedToday = new Set(
       db.reservations
         .filter((r) => r.date === today && r.status !== 'rejected' && r.status !== 'cancelled')
-        .map((r) => r.labId + '|' + r.startTime)
+        .map((r) => r.labName + '|' + r.startTime)
     ).size
     return ok({
       labCount: db.labs.length,
-      labAvailable: db.labs.filter((l) => l.status === 'available').length,
+      labAvailable: db.labs.filter((l) => l.status === '可用').length,
       todayReservations: db.reservations.filter((r) => r.date === today).length,
       pendingCount: db.reservations.filter((r) => r.status === 'pending').length,
       avgUsage: Math.round((usedToday / (db.labs.length * TIME_SLOTS.length)) * 1000) / 10
@@ -284,8 +286,10 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
   if (path === '/stats/lab-usage' && method === 'GET') {
     const list = db.labs
       .map((l) => ({
-        name: l.name,
-        count: db.reservations.filter((r) => r.labId === l.id && r.status === 'approved').length
+        name: l.labName,
+        count: db.reservations.filter(
+          (r) => r.labName === l.labName && r.status === 'approved'
+        ).length
       }))
       .sort((a, b) => b.count - a.count)
     return ok(list)

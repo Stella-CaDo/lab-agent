@@ -12,7 +12,7 @@ export const useReservationStore = defineStore('reservation', () => {
   const total = ref(0)
   const loading = ref(false)
   // status: '' 表示全部
-  const query = ref({ status: '', date: '', labId: '', page: 1, size: 10 })
+  const query = ref({ status: '', date: '', labName: '', page: 1, size: 10 })
 
   async function fetchList(extra = {}) {
     loading.value = true
@@ -45,8 +45,8 @@ export const useReservationStore = defineStore('reservation', () => {
    * 冲突预检：拉取目标实验室当天的全部预约，在前端判断是否重叠。
    * 命中就由页面提示，不往下发 POST —— 这是 A2 验收第 7 条的关键。
    */
-  async function findConflict({ labId, date, startTime, endTime }) {
-    const data = await getReservationList({ labId, date, page: 1, size: 200 })
+  async function findConflict({ labName, date, startTime, endTime }) {
+    const data = await getReservationList({ labName, date, page: 1, size: 200 })
     return data.list.find(
       (r) =>
         (r.status === 'pending' || r.status === 'approved') &&

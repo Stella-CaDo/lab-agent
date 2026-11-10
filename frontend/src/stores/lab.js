@@ -9,7 +9,7 @@ export const useLabStore = defineStore('lab', () => {
   // 查询条件放 store，页面只负责 v-model 绑定
   const query = ref({
     keyword: '',
-    building: '',
+    location: '',
     status: '',
     page: 1,
     size: 10
