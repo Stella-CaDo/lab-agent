@@ -11,7 +11,7 @@
 import { PURPOSES } from '../constants/dict.js'
 
 const STORAGE_KEY = 'lab_db_v1'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 /** 变体页面直读的 key：实验室 / 设备以这里为准 */
 export const LEGACY_KEY = {
@@ -119,11 +119,17 @@ function createCore() {
     { id: 4, name: '赵同学', account: 'student2', password: '123456', role: 'student', phone: '13800000004', status: 'active' }
   ]
 
+  // 预约种子规模：表格一页 10 条，默认做成正好 2 页
+  // 想多一点/少一点，只改这三个数即可
+  const RES_DAY_FROM = -7 // 往前生成 7 天
+  const RES_DAY_TO = 2 // 一直到后天
+  const RES_PER_DAY = 2 // 每天 2 条 → 10 天 × 2 = 20 条
+
   const reservations = []
   let id = 1
-  for (let day = -29; day <= 2; day++) {
+  for (let day = RES_DAY_FROM; day <= RES_DAY_TO; day++) {
     const date = offsetDate(day)
-    const count = 2 + Math.floor(rand() * 4)
+    const count = RES_PER_DAY
     for (let i = 0; i < count; i++) {
       const lab = pick(SEED_LABS)
       const slot = pick(SLOT_RANGES)
