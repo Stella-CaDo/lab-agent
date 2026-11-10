@@ -15,9 +15,10 @@
           <img style="width: 40px" src="@/assets/img/logo.png" alt="" />
           <div style="margin-left: 5px">实验室预约系统</div>
         </div>
-        <div style="display: flex; align-items: center">
+        <div style="display: flex; align-items: center; gap: 10px">
           <img src="@/assets/img/logo.png" alt="" style="width: 30px; border-radius: 50%" />
-          <div style="margin-left: 3px">管理员</div>
+          <span>{{ auth.user?.name || '未登录' }}</span>
+          <el-button size="small" @click="onLogout">退出</el-button>
         </div>
       </el-header>
       <el-container>
@@ -58,6 +59,8 @@
 </template>
 
 <script setup>
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import {
   Menu as IconMenu,
   House,
@@ -66,4 +69,12 @@ import {
   DataAnalysis,
   Calendar
 } from '@element-plus/icons-vue'
+
+const router = useRouter()
+const auth = useAuthStore()
+
+function onLogout() {
+  auth.logout()
+  router.replace('/login')
+}
 </script>

@@ -22,7 +22,7 @@ import {
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
-// 按需注册：只打包用到的图表类型，体积更小（答辩可讲）
+// 按需注册：只打包用到的图表类型，体积更小
 echarts.use([
   LineChart,
   BarChart,
