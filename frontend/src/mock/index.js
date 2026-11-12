@@ -245,11 +245,24 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
 
   /* ===== 用户（B3 调用，只读） ===== */
   if (path === '/users' && method === 'GET') {
-    const list = db.users.map((u) => {
-      const item = { ...u }
-      delete item.password
-      return item
-    })
+    const keyword = (query.keyword || '').trim()
+    const role = query.role || ''
+    const statusFilter = query.status || ''
+    const list = db.users
+      .filter(
+        (u) =>
+          (!role || u.role === role) &&
+          (!statusFilter || u.status === statusFilter) &&
+          (!keyword ||
+            u.name.includes(keyword) ||
+            u.account.includes(keyword) ||
+            u.phone.includes(keyword))
+      )
+      .map((u) => {
+        const item = { ...u }
+        delete item.password
+        return item
+      })
     return ok(paginate(list, query.page, query.size))
   }
 
@@ -287,9 +300,8 @@ export async function handleMock({ method, path, query = {}, body = {} }) {
     const list = db.labs
       .map((l) => ({
         name: l.labName,
-        count: db.reservations.filter(
-          (r) => r.labName === l.labName && r.status === 'approved'
-        ).length
+        count: db.reservations.filter((r) => r.labName === l.labName && r.status === 'approved')
+          .length
       }))
       .sort((a, b) => b.count - a.count)
     return ok(list)
